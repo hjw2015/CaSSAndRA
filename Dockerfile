@@ -31,6 +31,5 @@
 	# Note: if required, you can override the entrypoint by
 	#       passing the entrypoint option to the run command 
 	#       Example: --entrypoint /bin/bash
-	ENTRYPOINT ["/docker_entrypoint.sh", "python", "app.py"]
-	# standard debugging approach
-	CMD ["tail", "-f", "/dev/null"]
+#	ENTRYPOINT ["/docker_entrypoint.sh", "python", "app.py"]
+	ENTRYPOINT ["/docker_entrypoint.sh", "bash"]
