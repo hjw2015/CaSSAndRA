@@ -1,4 +1,4 @@
-	FROM python:3.10-slim
+	FROM python:3.11-slim
 	
 	# install sudo, so we can run app as cassandra user
 	RUN apt-get update && apt-get install -y sudo
