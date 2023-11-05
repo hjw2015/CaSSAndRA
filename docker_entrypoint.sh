@@ -31,6 +31,7 @@ fi
 # Modify the existing cassandra account to use the host group/user ids
 groupmod -o --gid "$HOST_GID" cassandra
 usermod --uid "$HOST_UID" cassandra
+chown cassandra .cassandra
 
 # Drop privileges and execute next container command, or 'bash' if not specified.
 if [[ $# -gt 0 ]]; then
