@@ -1,7 +1,7 @@
 	FROM python:3.11-slim
 	
 	# install sudo, so we can run app as cassandra user
-	RUN apt-get update && apt-get install -y sudo
+	RUN apt-get update && apt-get install -y sudo procps nano less
 	
 	# add entrypoint script for handling host user/group ids
 	COPY ./docker_entrypoint.sh /docker_entrypoint.sh
@@ -31,5 +31,5 @@
 	# Note: if required, you can override the entrypoint by
 	#       passing the entrypoint option to the run command 
 	#       Example: --entrypoint /bin/bash
-#	ENTRYPOINT ["/docker_entrypoint.sh", "python", "app.py"]
+#	ENTRYPOINT ["/docker_entrypoint.sh", "python", "app.py", "--init"]
 	ENTRYPOINT ["/docker_entrypoint.sh", "tail", "-f"]
