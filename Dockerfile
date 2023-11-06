@@ -1,7 +1,7 @@
 	FROM python:3.11-slim
 	
 	# install sudo, so we can run app as cassandra user
-	RUN apt-get update && apt-get install -y sudo procps nano less
+	RUN apt-get update && apt-get install -y sudo procps nano less iputils-ping
 	
 	# add entrypoint script for handling host user/group ids
 	COPY ./docker_entrypoint.sh /docker_entrypoint.sh
@@ -20,7 +20,9 @@
 	
 	# copy app files to our work directory (~/app)
 	COPY ./CaSSAndRA .
-	
+	# copy bugfix
+	COPY ./bugfix_dash_daq_min/dash_daq.min.js .
+	COPY ./bugfix_dash_daq_min/dash_daq.min.js /usr/local/lib/python3.*/site-packages/dash_daq/
 	# define the volume where our files will be stored
 	VOLUME ["/home/cassandra/.cassandra"]
 
