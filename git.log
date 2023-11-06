@@ -1,8 +1,5 @@
-commit 7718ebe689388831687cd9b98205b4c7451f2fad
-Merge: c2e5636 955abb5
-Author: hjw2015 <hj.wolff@gmail.com>
-Date:   Mon Nov 6 18:58:52 2023 +0100
+commit decd26a39834cf396136550d5f759ab3a1ed41ac
+Author: HJ@MacMini <hj.wolff@gmail.com>
+Date:   Mon Nov 6 20:48:36 2023 +0100
 
-    Merge pull request #1 from EinEinfach/master
-    
-    Added statistic data to overview page (#111)
+    Image build process
