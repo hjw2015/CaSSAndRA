@@ -1,5 +1,5 @@
-commit decd26a39834cf396136550d5f759ab3a1ed41ac
+commit 99d62f2373103e3d1ff7ac4f4afd568e527c4ddb
 Author: HJ@MacMini <hj.wolff@gmail.com>
-Date:   Mon Nov 6 20:48:36 2023 +0100
+Date:   Tue Nov 7 06:16:05 2023 +0100
 
-    Image build process
+    CaSSAndRA works in k8s - allow bigger uploads in ingress
