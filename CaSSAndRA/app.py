@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-#Version:0.98.0 Added stats data to overview
+#Version:0.102.1 Add some schedule messages
 # package imports
 import os
 import sys

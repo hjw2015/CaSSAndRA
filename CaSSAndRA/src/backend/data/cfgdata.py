@@ -35,8 +35,10 @@ class CommCfg:
     message_service: str = None
     telegram_token: str = None
     telegram_chat_id: int = None
+    pushover_token: str = None
+    pushover_user: str = None
     
-    def read_commcfg(self) -> dict():
+    def read_commcfg(self) -> dict:
         try:
             with open(file_paths.user.comm) as f: 
                 commcfg_from_file = json.load(f)
@@ -63,6 +65,8 @@ class CommCfg:
                 self.message_service = commcfg_from_file['MESSAGE_SERVICE']
                 self.telegram_token = commcfg_from_file['TELEGRAM'][0]['TOKEN']
                 self.telegram_chat_id = commcfg_from_file['TELEGRAM'][1]['CHAT_ID']
+                self.pushover_token = commcfg_from_file['PUSHOVER'][0]['TOKEN']
+                self.pushover_user = commcfg_from_file['PUSHOVER'][1]['USER']
                 return commcfg_from_file
         except Exception as e:
             logger.error('Could not read commcfg.json. Missing commcfg.json. Go with standard values')
@@ -101,6 +105,8 @@ class CommCfg:
             new_data['MESSAGE_SERVICE'] = self.message_service
             new_data['TELEGRAM'] = [{'TOKEN': self.telegram_token},
                                     {'CHAT_ID': self.telegram_chat_id}]
+            new_data['PUSHOVER'] = [{'TOKEN': self.pushover_token},
+                                    {'USER': self.pushover_user}]
             with open(file_paths.user.comm, 'w') as f:
                 logger.debug('New commcfg data: '+str(new_data))
                 json.dump(new_data, f, indent=4)
@@ -184,6 +190,7 @@ class RoverCfg:
     positionmode: str = 'relative'
     lon: float = 0
     lat: float = 0
+    fix_timeout = 60
 
     def read_rovercfg(self) -> None:
         try:
@@ -196,12 +203,13 @@ class RoverCfg:
             res = self.save_rovercfg()
             return
         try:
-            logger.debug('overcfg to read: '+ str(rovercfg_from_file))
+            logger.debug('rovercfg to read: '+ str(rovercfg_from_file))
             self.mowspeed_setpoint = rovercfg_from_file['mowspeed_setpoint']
             self.gotospeed_setpoint = rovercfg_from_file['gotospeed_setpoint']
             self.positionmode = rovercfg_from_file['positionmode']
             self.lon = rovercfg_from_file['lon']
             self.lat = rovercfg_from_file['lat']
+            self.fix_timeout = rovercfg_from_file['fix_timeout']
         except Exception as e:
             logger.error('Could not read rovercfg.json. Data are invalid. Go with standard values')
             res = self.save_rovercfg()
@@ -214,6 +222,7 @@ class RoverCfg:
             new_data['positionmode'] = self.positionmode
             new_data['lon'] = self.lon
             new_data['lat'] = self.lat
+            new_data['fix_timeout'] = self.fix_timeout
             with open(file_paths.user.rovercfg, 'w') as f:
                 logger.debug('New rovercfg data: '+str(new_data))
                 json.dump(new_data, f, indent=4)
