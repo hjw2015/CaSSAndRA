@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-#Version:0.102.1 Add some schedule messages
+#Version:0.103.2 Bug fixing in path planner
 # package imports
 import os
 import sys
