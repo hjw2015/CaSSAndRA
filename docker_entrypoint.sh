@@ -37,7 +37,11 @@ fi
 
 # Drop privileges and execute next container command, or 'bash' if not specified.
 if [[ $# -gt 0 ]]; then
-    exec sudo -u cassandra -- "$@"
+    if [[ -z "$DEBUG_APP" ]]; then
+        exec sudo -u cassandra -- "$@ --app_log_level DEBUG"
+    else
+        exec sudo -u cassandra -- "$@"
+    fi
 else
     exec sudo -u cassandra -- bash
 fi
