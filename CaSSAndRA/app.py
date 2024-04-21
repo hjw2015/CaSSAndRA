@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-#Version:0.103.2 Bug fixing in path planner
+#Version:0.105.0 Added more information to api
 # package imports
 import os
 import sys
