@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 # install sudo, so we can run app as cassandra user
 RUN apt-get update && apt-get install -y sudo procps nano less iputils-ping
@@ -22,7 +22,7 @@ RUN pip install -r requirements.txt
 COPY ./CaSSAndRA .
 # copy bugfix
 COPY ./bugfix_dash_daq_min/dash_daq.min.js .
-COPY ./bugfix_dash_daq_min/dash_daq.min.js /usr/local/lib/python3.11/site-packages/dash_daq/
+COPY ./bugfix_dash_daq_min/dash_daq.min.js /usr/local/lib/python3.*/site-packages/dash_daq/
 # define the volume where our files will be stored
 VOLUME ["/home/cassandra/.cassandra"]
 
