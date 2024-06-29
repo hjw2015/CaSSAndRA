@@ -14,7 +14,7 @@ from datetime import datetime
 #local imports
 from .. data import datatodf
 from .. data.cfgdata import CommCfg, commcfg
-from . import message
+from . import message, cmdlist
 
 @dataclass
 class MQTT:
@@ -43,12 +43,14 @@ class MQTT:
     
     def disconnect(self) -> None:
         logger.info('Disconnecting')
+        self.client.publish(self.mqtt_mower_name+'/status', 'offline')
         self.client.disconnect()
     
     def connect(self) -> None:
         self.client.on_connect = self.on_connect
         self.client.on_disconnect = self.on_disconnect
         try:
+            self.client.will_set(f'{self.mqtt_mower_name}/status', payload='offline', qos=0, retain=False)
             self.client.connect(self.mqtt_server, self.mqtt_port, keepalive=60)
             logger.info('Connecting...')
         except Exception as e:
@@ -61,12 +63,13 @@ class MQTT:
             logger.info('Connection to the MQTT server successful')  
             client.connection_flag = True
             self.subscribe()
+            cmdlist.cmd_set_positionmode = True
         else:
             logger.warning('Connection to the MQTT server not possible')
             client.connection_flag = False
     
     def on_disconnect(self, client, userdata, rc):
-        logger.warning('MQTT connection lost, reconnecting...')
+        logger.warning('MQTT connection disconnected')
         logger.info(f"Disconnecting reason: {rc}")
         self.client.connection_flag = False
     
@@ -150,6 +153,7 @@ class HTTP:
         logger.info('Connecting...')
         try:
             data = self.reqandchecksum('AT+V')
+            logger.debug(f'Data to be send: {data}')
             logger.info('TX: '+data)
             res = requests.post(url=self.http_ip, headers=self.header, data=data+'\n', timeout=6)
             logger.debug('Status code: '+str(res.status_code))
@@ -167,11 +171,14 @@ class HTTP:
                     logger.debug('Encryption: true')
                     try:
                         self.http_encryptkey = int(self.http_pass)%int(self.http_encryptchallenge)
+                        cmdlist.cmd_set_positionmode = True
                     except Exception as e:
                         logger.warning('Password is invalid. Check your comm config')
                         logger.debug(str(e))
                         self.http_encryptkey = None
                         self.http_status = -1
+                else:
+                    cmdlist.cmd_set_positionmode = True
             else:
                 logger.warning('Http request for props delivered implausible string')
                 datatodf.add_online_to_df_from_http(False)
@@ -189,10 +196,11 @@ class HTTP:
     def get_state(self) -> None:
         logger.info('Performing get state http-request')
         data = self.reqandchecksum('AT+S')
+        logger.debug(f'Data to be send: {data}')
         if self.http_encryption == 1:
             data_ascii = [ord(c) for c in data]
             data_encrypt = [x + self.http_encryptkey for x in data_ascii]
-            data_encrypt = [x - 126 + 31 if x>=126 else x for x in data_encrypt]
+            data_encrypt = [x - 126 + 31 if x>126 else x for x in data_encrypt]
             data = ''.join(map(chr, data_encrypt))
         try:
             logger.info('TX: '+data) 
@@ -216,10 +224,11 @@ class HTTP:
     def get_stats(self) -> None:
         logger.info('Performing get stats http-request')
         data = self.reqandchecksum('AT+T')
+        logger.debug(f'Data to be send: {data}')
         if self.http_encryption == 1:
             data_ascii = [ord(c) for c in data]
             data_encrypt = [x + self.http_encryptkey for x in data_ascii]
-            data_encrypt = [x - 126 + 31 if x>=126 else x for x in data_encrypt]
+            data_encrypt = [x - 126 + 31 if x>126 else x for x in data_encrypt]
             data = ''.join(map(chr, data_encrypt))
         try:
             logger.info('TX: '+data)
@@ -243,10 +252,11 @@ class HTTP:
     def get_obstacles(self) -> int:
         logger.info('Performing get obstacles http-request')
         data = self.reqandchecksum('AT+S2')
+        logger.debug(f'Data to be send: {data}')
         if self.http_encryption == 1:
             data_ascii = [ord(c) for c in data]
             data_encrypt = [x + self.http_encryptkey for x in data_ascii]
-            data_encrypt = [x - 126 + 31 if x>=126 else x for x in data_encrypt]
+            data_encrypt = [x - 126 + 31 if x>126 else x for x in data_encrypt]
             data = ''.join(map(chr, data_encrypt))
         try:
             logger.info('Backend: TX '+data) 
@@ -274,7 +284,9 @@ class HTTP:
         for i, msg in msg_pckg.iterrows():   
             rep_cnt = 0
             logger.debug(''+msg_pckg['msg'][i]+' will be send to the rover')
+            expected_res = msg[0].split(',')[0]
             data = self.reqandchecksum(msg_pckg['msg'][i])
+            logger.debug(f'Data to be send: {data}')
             if self.http_encryption == 1:
                 data_ascii = [ord(c) for c in data]
                 data_encrypt = [x + self.http_encryptkey for x in data_ascii]
@@ -284,13 +296,17 @@ class HTTP:
                 logger.info('TX '+data)
                 res = requests.post(url=self.http_ip, headers=self.header, data=data+'\n', timeout=6)
                 logger.info('RX: '+res.text)
+                got_res = f"AT+{res.text.split(',')[0]}"
                 self.http_status = res.status_code    
-                while self.http_status != 200:
+                while self.http_status != 200 or expected_res != got_res:
                     rep_cnt += 1
                     res = requests.post(url=self.http_ip, headers=self.header, data=data+'\n', timeout=6)
+                    logger.info('RX: '+res.text)
+                    got_res = f"AT+{res.text.split(',')[0]}"
                     self.http_status = res.status_code 
                     if rep_cnt > 30:
-                        logger.warning('Failed send the message to the rover')
+                        logger.error('Failed send the message to the rover')
+                        break
                     time.sleep(1) 
             except requests.exceptions.RequestException as e:
                 logger.warning('HTTP-Connection to the rover lost or not possible. Trying to reconnect')
@@ -342,6 +358,7 @@ class UART:
             self.client.reset_input_buffer()
             self.uart_status = True
             logger.info('Connection successful')
+            cmdlist.cmd_set_positionmode = True
         except:
             self.uart_status = False
             logger.warning('Connection to the rover is not possible.')
@@ -359,7 +376,7 @@ class UART:
                     self.on_obstacle(data)
         except Exception as e:
             logger.warning('Exception in communication occured, trying to reconnect')
-            logger.debug(str(e))
+            logger.warning(str(e))
             self.client.close()
             self.uart_status = False   
     

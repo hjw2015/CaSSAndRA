@@ -11,20 +11,18 @@ RUN chmod 755 /docker_entrypoint.sh
 RUN useradd -m cassandra
 WORKDIR /home/cassandra/app
 
-# install app dependencies before copying app files
-# this allows us to rebuild the image very quickly
-# unless we are changing anything in requirements.txt
-COPY ./requirements.txt .
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+	# install app dependencies before copying app files
+	# this allows us to rebuild the image very quickly
+	# unless we are changing anything in requirements.txt
+    COPY ./requirements.txt .
+	RUN pip install --upgrade pip
+	RUN pip install -r requirements.txt
+	
+	# copy app files to our work directory (~/app)
+	COPY ./CaSSAndRA .
 
-# copy app files to our work directory (~/app)
-COPY ./CaSSAndRA .
-# copy bugfix
-COPY ./bugfix_dash_daq_min/dash_daq.min.js .
-COPY ./bugfix_dash_daq_min/dash_daq.min.js /usr/local/lib/python3.*/site-packages/dash_daq/
-# define the volume where our files will be stored
-VOLUME ["/home/cassandra/.cassandra"]
+	# define the volume where our files will be stored
+	VOLUME ["/home/cassandra/.cassandra"]
 
 # start docker run commands with the entrypoint script first
 # remaining commands are executed immediately after and

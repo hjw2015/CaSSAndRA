@@ -7,7 +7,7 @@ from src.backend.data import mapdata, calceddata
 from src.backend.data.mapdata import current_map, current_task, tasks, progress_color_palette, tasks_color_palette
 from src.backend.map import map, path
 from src.backend.data.roverdata import robot
-from src.backend.data.cfgdata import pathplannercfgstate
+from src.backend.data.cfgdata import pathplannercfgstate, appcfg
 
 statemap = go.Figure()
 statemap.update_layout(
@@ -102,7 +102,7 @@ def handle_buttons(
           current_map.calculating = True
           current_map.task_progress = 0
           current_map.total_tasks = 1
-          route = path.calc(current_map.selected_perimeter, pathplannercfgstate, rover_position)
+          route = path.calc_simple(current_map.selected_perimeter, pathplannercfgstate)
           if route:
                current_map.areatomow = round(current_map.selected_perimeter.area)
                current_map.calc_route_preview(route) 
@@ -158,10 +158,11 @@ def update(n_intervals: int,
            calledpage: str,
            buttoncall: str,
            ) -> Patch:
-     mowdata = []
+
      #Plots
      traces = []
-     #calceddata.calcmapdata_for_plot(mapdata.perimeter) 
+     mowdata = []
+
      if not current_map.perimeter.empty:
           coords = current_map.perimeter_for_plot
           #Plot perimeter and exlusions
@@ -214,12 +215,14 @@ def update(n_intervals: int,
                current_mow_idx = 0
           path_finished = filtered[filtered.index < robot.position_mow_point_index]
           path_to_go = filtered[filtered.index >= current_mow_idx]
+          current_target = filtered[(filtered.index == current_mow_idx)|(filtered.index == current_mow_idx + 1)]
           #add mow progress
           traces.append(go.Scatter(x=path_finished['X'], y=path_finished['Y'], mode='lines', name='mow finished', opacity=0.5, line=dict(color='rgba(127, 127, 127, 0.25)')))
           traces.append(go.Scatter(x=path_to_go['X'], y=path_to_go['Y'], mode='lines', name='mow to go', opacity=0.7, line=dict(color='#7fb249')))
-          mowdata = [dict(text='Distance: '+str(current_map.finished_distance)+'m/'+str(current_map.distance)+'m ('+str(current_map.distance_perc)+'%)', showarrow=False, xref="paper", yref="paper",x=1,y=1),
-                         dict(text='Index: '+str(current_map.finished_idx)+'/'+str(current_map.idx)+' ('+str(current_map.idx_perc)+'%)', showarrow=False, xref="paper", yref="paper",x=1,y=0.95), 
-                         dict(text='Area to mow: '+str(current_map.areatomow)+'sqm', showarrow=False, xref="paper", yref="paper",x=1,y=0.9)]
+          traces.append(go.Scatter(x=current_target['X'], y=current_target['Y'], mode='lines', name='current target', opacity=0.8, line=dict(color='black', dash='dash', width=2)))
+          mowdata = [dict(text='Distance: '+str(current_map.finished_distance)+'m/'+str(current_map.distance)+'m ('+str(current_map.distance_perc)+'%)'+ '  ', showarrow=False, xref="paper", yref="paper",x=1,y=1),
+                         dict(text='Index: '+str(current_map.finished_idx)+'/'+str(current_map.idx)+' ('+str(current_map.idx_perc)+'%)'+ '  ', showarrow=False, xref="paper", yref="paper",x=1,y=0.95), 
+                         dict(text='Area to mow: '+str(current_map.areatomow)+'m²'+ '  ', showarrow=False, xref="paper", yref="paper",x=1,y=0.9)]
           robot.mowprogress = round(current_map.idx_perc/100, 3)
      elif not current_map.preview.empty:
           filtered = current_map.preview[current_map.preview['type'] == 'preview route']
@@ -272,8 +275,8 @@ def update(n_intervals: int,
                     yref='y',
                     x=robot.position_x,
                     y=robot.position_y,
-                    sizex=1.3,
-                    sizey=1.3,
+                    sizex=appcfg.rover_picture_size/100,
+                    sizey=appcfg.rover_picture_size/100,
                     xanchor='center',
                     yanchor='middle',
                     sizing='contain',
@@ -284,7 +287,7 @@ def update(n_intervals: int,
      imgs.append(robot_img)
 
      #Put all annotations together
-     mowdata.append(dict(text='Map: '+current_map.name, showarrow=False, xref="paper", yref="paper",x=1,y=0))
+     mowdata.append(dict(text='Map: '+current_map.name + '  ', showarrow=False, xref="paper", yref="paper",x=1,y=0))
 
      fig = Patch()
      fig.data = traces

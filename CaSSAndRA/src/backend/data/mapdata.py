@@ -12,6 +12,7 @@ import networkx as nx
 from dataclasses import dataclass, field, asdict
 from shapely.geometry import *
 from PIL import Image
+import uuid
 
 from .roverdata import robot
 from .cfgdata import PathPlannerCfg, pathplannercfg, rovercfg
@@ -20,6 +21,7 @@ from .. map import map
 @dataclass
 class Perimeter:
     name: str = ''
+    map_id: str = None
     angle_offset: int = 0
     perimeter: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
     perimeter_polygon: Polygon = Polygon()
@@ -31,7 +33,9 @@ class Perimeter:
     gotopoints: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
     gotopoint: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
     mowpath: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
+    mowpathId: str = None
     preview: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
+    previewId: str = None
     obstacles: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
     obstacle_img: Image = field(default_factory = lambda: 
                                 Image.open(os.path.dirname(__file__).replace('/backend/data', '/assets/icons/obstacle.png')))
@@ -150,6 +154,11 @@ class Perimeter:
         for i in range(len(perimeter_coords)-1):
             line = LineString(([perimeter_coords[i], perimeter_coords[i+1]]))
             G.add_edge(list(line.coords)[0], list(line.coords)[1], weight=line.length)
+            for k in range(len(perimeter_coords)-1):
+                possible_way = self.check_direct_way(perimeter_coords[i], perimeter_coords[k])
+                if possible_way:
+                    direct_way = LineString((perimeter_coords[i], perimeter_coords[k]))
+                    G.add_edge(list(direct_way.coords)[0], list(direct_way.coords)[1], weight=direct_way.length)
         logger.debug('NetworkX perimeter edges: '+str(len(G.edges)))
         
         #Create networkx edges for exclusions
@@ -224,11 +233,20 @@ class Perimeter:
         self.create_go_to_points()
         self.create_networkx_graph()
         self.save_map_name()
+        self.map_id = str(uuid.uuid4())
+        self.previewId = str(uuid.uuid4())
+        self.mowpathId = str(uuid.uuid4())
     
     def calc_route_preview(self, route: list) -> None:
         self.preview = pd.DataFrame(route)
         self.preview.columns = ['X', 'Y']
         self.preview['type'] = 'preview route'
+        self.previewId = str(uuid.uuid4())
+
+    def calc_route_mowpath(self) -> None:
+        self.mowpath = self.preview
+        self.mowpath['type'] = 'way'
+        self.mowpathId = str(uuid.uuid4())
     
     def read_map_name(self) -> str:
         try:
@@ -242,7 +260,7 @@ class Perimeter:
             return ''
     
     def save_map_name(self) -> None:
-        tmp_data = {'PERIMETERNAME': self.name}
+        tmp_data = {'PERIMETERNAME': self.name, 'MAPID': self.map_id}
         try:
             with open(self.current_perimeter_file, 'w') as f:
                 json.dump(tmp_data, f, indent=4)
@@ -269,8 +287,8 @@ class Perimeter:
         self.calc_mow_progress()
     
     def calc_mow_progress(self) -> None:
-        self.finished_idx = robot.position_mow_point_index - 1
         if not self.mowpath.empty:
+            self.finished_idx = robot.position_mow_point_index - 1
             try: 
                 filtered = self.mowpath[self.mowpath['type'] == 'way']
                 if self.finished_idx < 0:
@@ -297,6 +315,36 @@ class Perimeter:
                 self.finished_idx = 0
                 self.idx = 0
                 self.idx_perc = 0
+    
+    def perimeter_to_geojson(self) -> str:
+        try:
+            logger.info('Exporting current map to geojson')
+            perimeter_for_export = self.perimeter_for_plot
+            if not perimeter_for_export.empty:
+                geojson = dict(type="FeatureCollection", features=[])
+                #perimeter
+                coords = perimeter_for_export[perimeter_for_export['type'] == 'perimeter']
+                value = dict(type="Feature", properties=dict(name="perimeter"), geometry=dict(dict(type="Polygon", coordinates=[coords[['X', 'Y']].values.tolist()])))
+                geojson['features'].append(value)
+                #dockpoints
+                coords = perimeter_for_export[perimeter_for_export['type'] == 'dockpoints']
+                value = dict(type="Feature", properties=dict(name="dockpoints"), geometry=dict(dict(type="LineString", coordinates=coords[['X', 'Y']].values.tolist())))
+                geojson['features'].append(value)
+                #search wire
+                coords = perimeter_for_export[perimeter_for_export['type'] == 'search wire']
+                value = dict(type="Feature", properties=dict(name="search wire"), geometry=dict(dict(type="LineString", coordinates=coords[['X', 'Y']].values.tolist())))
+                geojson['features'].append(value)
+                #exclusions
+                filtered = perimeter_for_export[(perimeter_for_export['type'] != 'perimeter') & (perimeter_for_export['type'] != 'dockpoints') & (perimeter_for_export['type'] != 'search wire')]
+                for i, exclusion in enumerate(filtered['type'].unique()):
+                    coords = perimeter_for_export[perimeter_for_export['type'] == exclusion]
+                    value = dict(type="Feature", properties=dict(name="exclusion"), idx=i, geometry=dict(dict(type="Polygon", coordinates=[coords[['X', 'Y']].values.tolist()])))
+                    geojson['features'].append(value)
+                return geojson
+        except Exception as e:
+            logger.error('Could not export current map to gejson')
+            logger.debug(f'{e}')
+            return e
 
 @dataclass
 class Perimeters:
@@ -372,11 +420,75 @@ class Perimeters:
             return
     
         except Exception as e:
-            logger.warning('Backend: Sunray file import failed')
+            logger.info('Selected file is not sunray export. Trying geojson format.')
             logger.debug(str(e))
-            self.imported = -1
-            self.imported = pd.DataFrame()
-            return
+            try:
+                geojson_data = json.loads(decoded.decode('utf-8'))
+                df = pd.DataFrame()
+                for geometry in geojson_data['features']:
+                    if geometry['properties']['name'] == 'perimeter':
+                        perimeter = pd.DataFrame({'name': ['perimeter'], 'geometry': [Polygon(geometry['geometry']['coordinates'][0])]})
+                        df = pd.concat([df, perimeter], ignore_index=True)
+                    elif geometry['properties']['name'] == 'exclusion':
+                        exclusion = pd.DataFrame({'name': ['exclusion'], 'geometry': [Polygon(geometry['geometry']['coordinates'][0])]})
+                        df = pd.concat([df, exclusion], ignore_index=True)
+                    elif geometry['properties']['name'] == 'dockpoints':
+                        dockpoints= pd.DataFrame({'name': ['dockpoints'], 'geometry': [LineString(geometry['geometry']['coordinates'])]})
+                        df = pd.concat([df, dockpoints], ignore_index=True)
+                    elif geometry['properties']['name'] == 'search wire':
+                        search_wire = pd.DataFrame({'name': ['search wire'], 'geometry': [LineString(geometry['geometry']['coordinates'])]})
+                        df = pd.concat([df, search_wire], ignore_index=True)
+                #df = geopandas.read_file(io.StringIO(decoded.decode('utf-8')))
+                #extract perimeter data points
+                coords = pd.DataFrame(list(df[df['name'] == 'perimeter']['geometry'].iloc[0].exterior.coords))
+                if coords.empty:
+                    self.import_status = -1
+                    logger.warning('Import failed. No perimeter data points found.')
+                    return
+                coords.columns = ['lon', 'lat']
+                coords = self.coords_abs_to_rel(coords)
+                coords['type'] = 'perimeter'
+                #extract exlusion data points
+                exclusions = df[df['name'] == 'exclusion']
+                if not exclusions.empty:
+                    exclusions = exclusions.reset_index()
+                    for i, exclusion in exclusions.iterrows():
+                        exclusion_df = pd.DataFrame(list(exclusion['geometry'].exterior.coords))
+                        if exclusion_df.empty:
+                            continue
+                        exclusion_df.columns = ['lon', 'lat']
+                        exclusion_df = self.coords_abs_to_rel(exclusion_df)
+                        exclusion_df['type'] = f"exclusion_{i}"
+                        coords = pd.concat([coords, exclusion_df], ignore_index=True)
+                #extract dockpoints
+                dockpoints = df[df['name'] == 'dockpoints']
+                if not dockpoints.empty:
+                    dockpoints_df = pd.DataFrame(list(dockpoints['geometry'].iloc[0].coords))
+                    if not dockpoints_df.empty:
+                        dockpoints_df.columns = ['lon', 'lat']
+                        dockpoints_df = self.coords_abs_to_rel(dockpoints_df)
+                        dockpoints_df['type'] = 'dockpoints'
+                        coords = pd.concat([coords, dockpoints_df], ignore_index=True)
+                #extract search wire
+                search_wire = df[df['name'] == 'search wire']
+                if not search_wire.empty:
+                    search_wire_df = pd.DataFrame(list(search_wire['geometry'].iloc[0].coords))
+                    if not search_wire_df.empty:
+                        search_wire_df.columns = ['lon', 'lat']
+                        search_wire_df = self.coords_abs_to_rel(search_wire_df)
+                        search_wire_df['type'] = 'search wire'
+                        coords = pd.concat([coords, search_wire_df], ignore_index=True)
+                
+                coords['map_nr'] = 0
+                self.import_status = 0
+                self.imported = coords
+                return
+            except Exception as e:
+                logger.warning('Import failed. Please check the selected file data format.')
+                logger.debug(str(e))
+                self.import_status = -1
+                self.imported = pd.DataFrame()
+                return
     
     def create_perimeter_for_plot(self, data_to_plot: pd.DataFrame) -> pd.DataFrame:
         perimeter_df = pd.DataFrame()
@@ -396,24 +508,36 @@ class Perimeters:
                 perimeter_df = pd.concat([perimeter_df, coords], ignore_index=True)
         return perimeter_df
     
-    # def export_geojson(self) -> None:
-    #     if not self.perimeter_for_plot.empty:
-    #         geojson = dict(type="FeatureCollection", features=[])
-    #         #perimeter
-    #         abs_coords = self.coords_rel_to_abs(self.perimeter_for_plot[self.perimeter_for_plot['type'] == 'perimeter'])
-    #         value = dict(type="Feature", properties=dict(name="perimeter"), geometry=dict(dict(type="Polygon", coordinates=[abs_coords[['lon', 'lat']].values.tolist()])))
-    #         geojson['features'].append(value)
-    #         #dockpoints
-    #         abs_coords = self.coords_rel_to_abs(self.perimeter_for_plot[self.perimeter_for_plot['type'] == 'dockpoints'])
-    #         value = dict(type="Feature", properties=dict(name="dockpoints"), geometry=dict(dict(type="LineString", coordinates=abs_coords[['lon', 'lat']].values.tolist())))
-    #         geojson['features'].append(value)
-    #         #exclusions
-    #         filtered = self.perimeter_for_plot[(self.perimeter_for_plot['type'] != 'perimeter') & (self.perimeter_for_plot['type'] != 'dockpoints')]
-    #         for i, exclusion in enumerate(filtered['type'].unique()):
-    #             abs_coords = self.coords_rel_to_abs(self.perimeter_for_plot[self.perimeter_for_plot['type'] == exclusion])
-    #             value = dict(type="Feature", properties=dict(name="exclusion"), idx=i, geometry=dict(dict(type="Polygon", coordinates=[abs_coords[['lon', 'lat']].values.tolist()])))
-    #             geojson['features'].append(value)
-    #         res = json.dumps(geojson)
+    def export_geojson(self) -> str:
+        try:
+            logger.info('Exporting selected map to geojson')
+            perimeter_for_export = self.create_perimeter_for_plot(self.build_cpy)
+            if not perimeter_for_export.empty:
+                geojson = dict(type="FeatureCollection", features=[])
+                #Working with absolute coordinates
+                #perimeter
+                abs_coords = self.coords_rel_to_abs(perimeter_for_export[perimeter_for_export['type'] == 'perimeter'])
+                value = dict(type="Feature", properties=dict(name="perimeter"), geometry=dict(dict(type="Polygon", coordinates=[abs_coords[['lon', 'lat']].values.tolist()])))
+                geojson['features'].append(value)
+                #dockpoints
+                abs_coords = self.coords_rel_to_abs(perimeter_for_export[perimeter_for_export['type'] == 'dockpoints'])
+                value = dict(type="Feature", properties=dict(name="dockpoints"), geometry=dict(dict(type="LineString", coordinates=abs_coords[['lon', 'lat']].values.tolist())))
+                geojson['features'].append(value)
+                #search wire
+                abs_coords = self.coords_rel_to_abs(perimeter_for_export[perimeter_for_export['type'] == 'search wire'])
+                value = dict(type="Feature", properties=dict(name="search wire"), geometry=dict(dict(type="LineString", coordinates=abs_coords[['lon', 'lat']].values.tolist())))
+                geojson['features'].append(value)
+                #exclusions
+                filtered = perimeter_for_export[(perimeter_for_export['type'] != 'perimeter') & (perimeter_for_export['type'] != 'dockpoints') & (perimeter_for_export['type'] != 'search wire')]
+                for i, exclusion in enumerate(filtered['type'].unique()):
+                    abs_coords = self.coords_rel_to_abs(perimeter_for_export[perimeter_for_export['type'] == exclusion])
+                    value = dict(type="Feature", properties=dict(name="exclusion"), idx=i, geometry=dict(dict(type="Polygon", coordinates=[abs_coords[['lon', 'lat']].values.tolist()])))
+                    geojson['features'].append(value)
+                return json.dumps(geojson)
+        except Exception as e:
+            logger.error('Could not export selected map to gejson')
+            logger.debug(f'{e}')
+            return e
     
     def coords_rel_to_abs(self, coords: pd.DataFrame) -> pd.DataFrame:
         lat = coords[['Y']]/111111+rovercfg.lat
@@ -422,6 +546,14 @@ class Perimeters:
         abs_coords['lon'] = lon
         abs_coords['lat'] = lat
         return abs_coords
+    
+    def coords_abs_to_rel(self, coords: pd.DataFrame) -> pd.DataFrame:
+        Y = (coords[['lat']]-rovercfg.lat)*111111
+        X = (coords[['lon']] - rovercfg.lon)*(111111*math.cos(math.radians(rovercfg.lat)))
+        rel_coords = pd.DataFrame()
+        rel_coords['X'] = X
+        rel_coords['Y'] = Y
+        return rel_coords
         
     def select_imported(self, nr: int) -> None:
         logger.info('Backend: Changing perimeter to nr: '+str(nr))
