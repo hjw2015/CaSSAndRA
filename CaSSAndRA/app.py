@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-#Version:0.119.0 Fixed Last will message in API, some preparations for new feautures
+#Version:0.125.1 Increase api update frequency
 # package imports
 import os
 import sys
